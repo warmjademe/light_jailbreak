@@ -5,9 +5,13 @@ Data and reproduction code for the PLOS ONE paper:
 > **Jailbreaking LLM-Assisted Penetration Testing: An Empirical Study and Benchmark Dataset**
 
 This repository contains **PenTestBench**, a 200-task red-teaming benchmark covering
-the full attack lifecycle, together with the raw results of running four jailbreak
-attack baselines against three open-weight victim models, and a from-scratch harness
-(`reproduce/`) for re-running the attacks against additional models.
+the full attack lifecycle, together with the per-task results of running four jailbreak
+attack baselines against **eleven open-weight victim models** (three primary models plus
+eight more recent models added in the PLOS ONE revision), and a from-scratch harness
+(`reproduce/`) for re-running the attacks against further models. To limit misuse, the
+**raw model completions are withheld** from every result file (see the notice below);
+all task prompts, judge scores, success labels, and code needed to reproduce the
+findings are included.
 
 ---
 
@@ -16,7 +20,15 @@ attack baselines against three open-weight victim models, and a from-scratch har
 This repository contains **offensive-security red-teaming material**: penetration-testing
 task prompts spanning reconnaissance, exploitation, credential theft, lateral movement,
 persistence, evasion, command-and-control, data exfiltration, social engineering, and
-ransomware/destructive techniques, **plus model responses elicited by jailbreak attacks**.
+ransomware/destructive techniques.
+
+To limit misuse, the **raw model completions are deliberately withheld**: in every
+`attack_results__*.json`, each per-task record keeps the task prompt, the judge score, and
+the `success` label, but its `victim_response` field is replaced by a placeholder
+(`[withheld for safety; ...]`). The actual exploit code/guidance produced by the victim
+models is therefore **not** distributed here. Because all victim models are open-weight and
+all prompts derive from public sources, anyone with a legitimate research need can
+regenerate the completions by re-running the harness locally.
 
 It is released **solely for defensive security research** — for studying, measuring, and
 improving the safety alignment of LLMs against misuse. **Do not** use any content here to
@@ -31,7 +43,8 @@ with all applicable laws and with the terms of any model or API provider you emp
 | Path | What it is |
 | --- | --- |
 | `light_jailbreak_datasets.json` | The PenTestBench dataset — 200 tasks in 12 categories (see [Dataset](#dataset-pentestbench)). |
-| `attack_results__*.json` (×12) | Raw attack results — 4 attack baselines × 3 victim models (see [Results](#attack-results)). |
+| `attack_results__*.json` (×12) | Per-task results — 4 attacks × 3 primary victim models (raw completions withheld; see [Results](#attack-results)). |
+| `reproduce_results/attack_results__*.json` (×32) | Per-task results — 4 attacks × 8 additional recent models added in the PLOS ONE revision (raw completions withheld). |
 | `reproduce/` | A self-contained harness to re-run the four attacks against additional models. See [`reproduce/README.md`](reproduce/README.md). |
 | `README.md` | This file. |
 
@@ -142,6 +155,32 @@ the judge is **`deepseek-ai/DeepSeek-V3`** (via SiliconFlow).
 | ministral-3:latest | 0.360 | 0.980 | 0.170 | 0.745 |
 | qwen2.5-coder:14b | 0.170 | 0.665 | 0.100 | 0.295 |
 
+> The `attack_results__*.json` files in the repository root store the per-task `asr` from
+> the raw runs; the manuscript reports the headline ASRs for these three primary models as
+> the best of repeated runs (e.g. MiniStral DR 0.384, Qwen DR 0.194).
+
+### Additional recent models (PLOS ONE revision)
+
+The **`reproduce_results/`** directory holds the same four-attack protocol (200 tasks each,
+same DeepSeek-V3 judge) run against **eight more recent open-weight models**, added during
+the PLOS ONE revision and analysed together with the three primary models in the paper.
+Files are named `reproduce_results/attack_results__{direct_request,pap,artprompt,code_injection}__<model>.json`.
+
+| Victim model | Direct Request | PAP | ArtPrompt | Code Injection |
+| --- | ---: | ---: | ---: | ---: |
+| qwen3:8b | 0.250 | 0.670 | 0.250 | 0.195 |
+| qwen3:14b | 0.175 | 0.585 | 0.230 | 0.460 |
+| qwen2.5-coder:7b | 0.275 | 0.445 | 0.430 | 0.335 |
+| glm4:9b | 0.425 | 0.715 | 0.405 | 0.140 |
+| gemma3:12b | 0.330 | 0.600 | 0.460 | 0.855 |
+| llama3.1:8b | 0.095 | 0.175 | 0.110 | 0.015 |
+| phi4 (14b) | 0.015 | 0.035 | 0.040 | 0.070 |
+| mistral-nemo:12b | 0.720 | 0.780 | 0.435 | 0.915 |
+
+(ASR with 95% Wilson confidence intervals and McNemar tests is given in the paper. These
+eight were evaluated single-shot, so their `queries` field is not comparable to the
+repeated-trial accounting of the three primary models.)
+
 ### Result-JSON schema
 
 Each `attack_results__*.json` has a summary header plus a `results` array.
@@ -173,7 +212,7 @@ Each `attack_results__*.json` has a summary header plus a `results` array.
 | `victim_model`, `victim_model_type` | Target model + backend. |
 | `strategy` | Attack name. |
 | `prompt` | The (best / final) prompt sent to the victim. |
-| `victim_response` | The victim model's reply. |
+| `victim_response` | **Withheld** — replaced by a placeholder string; the raw model completion (exploit code/guidance) is not released. Regenerate by re-running the open model locally. |
 | `reward`, `judge_score` | DeepSeek-V3 score in `[0.0, 1.0]`. |
 | `judge_model` | `deepseek-ai/DeepSeek-V3`. |
 | `scoring_method` | How the score was produced. |
@@ -205,7 +244,7 @@ cd reproduce
 
 # 1. serve victim models (ollama default), e.g.:
 ollama serve &
-ollama pull qwen3:8b gemma3:12b glm4:9b deepseek-r1:14b
+ollama pull qwen3:8b qwen3:14b qwen2.5-coder:7b glm4:9b gemma3:12b llama3.1:8b phi4 mistral-nemo:12b
 
 # 2. provide the judge API key (DeepSeek-V3 via SiliconFlow):
 export SILICONFLOW_API_KEY=sk-...

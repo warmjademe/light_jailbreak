@@ -30,18 +30,21 @@ VICTIM_OPENAI_BASE = os.environ.get("PTB_VICTIM_BASE", "http://localhost:8000/v1
 VICTIM_OPENAI_KEY = os.environ.get("PTB_VICTIM_KEY", "EMPTY")
 
 # ----------------------------------------------------------------------------
-# The five additional recent open-weight victim models (Reviewer 2, point 5).
-# `tag` is the ollama tag; for vLLM pass the HF id via --model on the CLI.
-# NOTE: Llama-3.3 is a 70B model and will NOT fit on a single 24 GB GPU (4090).
-#       Use a quantized build (e.g. `llama3.3:70b-instruct-q4_K_M` on ollama,
-#       ~40 GB; needs multi-GPU or a big card) or swap to a smaller Llama.
+# The eight additional recent open-weight victim models evaluated for the PLOS
+# ONE revision (Reviewer 2, point 5). `tag` is the ollama tag; for vLLM pass the
+# HF id via --model on the CLI. All eight fit on a single 24 GB GPU (RTX 4090).
+# NOTE: larger 70B-class models (e.g. llama3.3:70b) exceed 24 GB and are left to
+#       future work; closed-source APIs are out of scope (local-deployable only).
 # ----------------------------------------------------------------------------
 NEW_MODELS = {
     "qwen3-8b":              "qwen3:8b",
-    "llama3.3":             "llama3.3:70b-instruct-q4_K_M",   # 70B! see note above
-    "deepseek-r1-distill-qwen-14b": "deepseek-r1:14b",
-    "glm-4-9b":             "glm4:9b",
-    "gemma-3-12b":          "gemma3:12b",
+    "qwen3-14b":             "qwen3:14b",
+    "qwen2.5-coder-7b":      "qwen2.5-coder:7b",
+    "glm4-9b":               "glm4:9b",
+    "gemma3-12b":            "gemma3:12b",
+    "llama3.1-8b":           "llama3.1:8b",
+    "phi4":                  "phi4",
+    "mistral-nemo-12b":      "mistral-nemo:12b",
 }
 
 # ----------------------------------------------------------------------------

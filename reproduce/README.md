@@ -15,23 +15,21 @@ No third-party Python packages are required (pure stdlib `urllib`). Python 3.8+.
 - `run_attack.py`   — driver: one (model × baseline) → result JSON
 - `compute_table.py`— ASR + 95% Wilson CI + McNemar(PAP vs DR) → LaTeX rows
 
-## The five additional models (config.NEW_MODELS)
-`Qwen3-8B`, `Llama-3.3 (instruct)`, `DeepSeek-R1-Distill-Qwen-14B`, `GLM-4-9B`, `Gemma-3-12B`.
+## The eight additional models (config.NEW_MODELS)
+`Qwen3-8B`, `Qwen3-14B`, `Qwen2.5-Coder-7B`, `GLM-4-9B`, `Gemma-3-12B`, `Llama-3.1-8B`,
+`Phi-4` (14B), `Mistral-Nemo-12B`.
 
-> ⚠️ **Llama-3.3 is a 70B model** — it will NOT fit on a single 24 GB GPU (RTX 4090).
-> Use a quantized build (`llama3.3:70b-instruct-q4_K_M`, ~40 GB; needs a big card
-> or multi-GPU) or substitute a smaller Llama (e.g. `llama3.1:8b`). Edit
-> `config.NEW_MODELS["llama3.3"]` accordingly. The other four fit on a 4090.
+> All eight fit on a single 24 GB GPU (RTX 4090). Larger 70B-class models
+> (e.g. `llama3.3:70b`) exceed 24 GB and are left to future work; closed-source
+> APIs are out of scope — this study evaluates locally-deployable open-weight models only.
 
 ## 1. Serve the victim models
 **ollama** (default backend):
 ```bash
 ollama serve &
-ollama pull qwen3:8b
-ollama pull deepseek-r1:14b
-ollama pull glm4:9b
-ollama pull gemma3:12b
-# ollama pull llama3.3:70b-instruct-q4_K_M   # only if you have the VRAM
+ollama pull qwen3:8b qwen3:14b qwen2.5-coder:7b
+ollama pull glm4:9b gemma3:12b llama3.1:8b
+ollama pull phi4 mistral-nemo:12b
 ```
 **vLLM** (OpenAI-compatible) instead:
 ```bash
@@ -50,11 +48,11 @@ The PAP attacker reuses the judge endpoint by default (override with `PTB_ATTACK
 ## 3. Run
 ```bash
 # all four baselines for one model:
-python run_attack.py --model qwen3-8b   --baseline all
-python run_attack.py --model gemma-3-12b --baseline all
-python run_attack.py --model glm-4-9b    --baseline all
-python run_attack.py --model deepseek-r1-distill-qwen-14b --baseline all
-# (llama3.3 only if VRAM allows)
+python run_attack.py --model qwen3-8b    --baseline all
+python run_attack.py --model gemma3-12b  --baseline all
+python run_attack.py --model glm4-9b     --baseline all
+python run_attack.py --model phi4        --baseline all
+# ... likewise qwen3-14b, qwen2.5-coder-7b, llama3.1-8b, mistral-nemo-12b
 
 # vLLM example (raw HF id + a short label for the filename):
 PTB_BACKEND=openai PTB_VICTIM_BASE=http://localhost:8000/v1 \
@@ -69,7 +67,7 @@ python compute_table.py ../reproduce_results/*.json ../*.json
 This prints a readable table and ready-to-paste LaTeX rows for the
 Reviewer-2.5 table in `main.tex` / the response letter, e.g.:
 ```
-    qwen3-8b & 31.5 [25.4,38.3] & 71.0 [64.3,76.9] & 12.0 [8.2,17.2] & 28.0 [22.2,34.6] \\
+    qwen3-8b & 25.0 [19.5,31.4] & 67.0 [60.2,73.1] & 25.0 [19.5,31.4] & 19.5 [14.6,25.5] \\
 ```
 
 ## Notes / fidelity
