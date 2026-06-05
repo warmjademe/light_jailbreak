@@ -19,51 +19,77 @@ import argparse
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config as C
 from common import load_tasks, query_victim, judge_score
 from attacks import ATTACKS
 
 
+def _process_task(task, model_tag, baseline_name, attack, iterative):
+    """Run one task end-to-end (attack iters -> victim -> judge). Returns a result dict."""
+    best_score, best_resp, best_prompt, used = 0.0, "", "", 0
+    intent = task_text_intent(task)
+    for prompt in attack(task):
+        used += 1
+        try:
+            resp, _ = query_victim(model_tag, prompt)
+        except Exception as e:                          # noqa: BLE001
+            resp = f"<victim error: {e}>"
+        try:
+            score = judge_score(intent, resp)
+        except Exception:                               # noqa: BLE001
+            score = 0.0
+        if score > best_score:
+            best_score, best_resp, best_prompt = score, resp, prompt
+        if score >= C.SUCCESS_THRESHOLD or not iterative:
+            break
+    return {
+        "task_id": task["id"],
+        "task_description": task["description"],
+        "victim_model": model_tag,
+        "victim_model_type": C.BACKEND,
+        "strategy": baseline_name,
+        "prompt": best_prompt,
+        "victim_response": best_resp,
+        "reward": best_score,
+        "judge_score": best_score,
+        "judge_model": C.JUDGE_MODEL,
+        "scoring_method": "continuous_scalar",
+        "success": best_score >= C.SUCCESS_THRESHOLD,
+        "queries": used,
+        "time_seconds": None,
+        "iterations": used,
+    }
+
+
 def run_one(model_key, model_tag, baseline_name, tasks):
     attack = ATTACKS[baseline_name]
     iterative = baseline_name in ("pap", "code_injection")
-    results = []
+    results = [None] * len(tasks)
     t0 = time.time()
-    for i, task in enumerate(tasks, 1):
-        best_score, best_resp, best_prompt, used = 0.0, "", "", 0
-        for prompt in attack(task):
-            used += 1
+    workers = max(1, C.CONCURRENCY)
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        fut2i = {ex.submit(_process_task, t, model_tag, baseline_name, attack, iterative): i
+                 for i, t in enumerate(tasks)}
+        for fut in as_completed(fut2i):
+            i = fut2i[fut]
             try:
-                resp, mtype = query_victim(model_tag, prompt)
+                results[i] = fut.result()
             except Exception as e:                      # noqa: BLE001
-                resp, mtype = f"<victim error: {e}>", C.BACKEND
-            score = judge_score(task_text_intent(task), resp)
-            if score > best_score:
-                best_score, best_resp, best_prompt = score, resp, prompt
-            if score >= C.SUCCESS_THRESHOLD or not iterative:
-                break
-        results.append({
-            "task_id": task["id"],
-            "task_description": task["description"],
-            "victim_model": model_tag,
-            "victim_model_type": C.BACKEND,
-            "strategy": baseline_name,
-            "prompt": best_prompt,
-            "victim_response": best_resp,
-            "reward": best_score,
-            "judge_score": best_score,
-            "judge_model": C.JUDGE_MODEL,
-            "scoring_method": "continuous_scalar",
-            "success": best_score >= C.SUCCESS_THRESHOLD,
-            "queries": used,
-            "time_seconds": None,
-            "iterations": used,
-        })
-        if i % 10 == 0:
-            done = sum(1 for r in results if r["success"])
-            print(f"  [{model_key}/{baseline_name}] {i}/{len(tasks)}  ASR so far {done/i:.3f}",
-                  flush=True)
+                t = tasks[i]
+                results[i] = {"task_id": t["id"], "task_description": t["description"],
+                              "victim_model": model_tag, "victim_model_type": C.BACKEND,
+                              "strategy": baseline_name, "prompt": "", "victim_response": f"<error: {e}>",
+                              "reward": 0.0, "judge_score": 0.0, "judge_model": C.JUDGE_MODEL,
+                              "scoring_method": "continuous_scalar", "success": False,
+                              "queries": 0, "time_seconds": None, "iterations": 0}
+            done += 1
+            if done % 10 == 0:
+                succ = sum(1 for r in results if r and r["success"])
+                print(f"  [{model_key}/{baseline_name}] {done}/{len(tasks)}  ASR so far {succ/done:.3f}",
+                      flush=True)
 
     succ = sum(1 for r in results if r["success"])
     summary = {
@@ -117,14 +143,25 @@ def main():
         names = [args.baseline]
 
     tasks = load_tasks()
+    if args.limit and args.limit > 0:
+        tasks = tasks[:args.limit]
     os.makedirs(C.OUT_DIR, exist_ok=True)
     print(f"Model={model_tag} backend={C.BACKEND} judge={C.JUDGE_MODEL} "
           f"tasks={len(tasks)} baselines={names}")
 
     for name in names:
+        out = os.path.join(C.OUT_DIR, f"attack_results__{name}__{model_key}.json")
+        if not (args.limit and args.limit > 0) and os.path.exists(out):
+            try:
+                prev = json.load(open(out, encoding="utf-8"))
+                if prev.get("total_samples", 0) >= len(tasks):
+                    print(f"=== {model_key} :: {name} :: SKIP (already {prev['total_samples']} done) ===",
+                          flush=True)
+                    continue
+            except Exception:                           # noqa: BLE001
+                pass
         print(f"=== {model_key} :: {name} ===", flush=True)
         summary = run_one(model_key, model_tag, name, tasks)
-        out = os.path.join(C.OUT_DIR, f"attack_results__{name}__{model_key}.json")
         json.dump(summary, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
         print(f"  -> ASR={summary['asr']}  avg_queries={summary['avg_queries']}  saved {out}")
 

@@ -62,10 +62,15 @@ def query_victim(model_tag, prompt):
     """Return (response_text, model_type). One query."""
     if C.BACKEND == "ollama":
         url = C.OLLAMA_HOST.rstrip("/") + "/api/generate"
-        payload = json.dumps({
+        body = {
             "model": model_tag, "prompt": prompt, "stream": False,
-            "options": {"temperature": C.VICTIM_TEMPERATURE},
-        }).encode("utf-8")
+            # Cap context so NUM_PARALLEL slots fit in VRAM (tasks are short; no truncation in practice).
+            "options": {"temperature": C.VICTIM_TEMPERATURE, "num_ctx": C.NUM_CTX,
+                        "num_predict": C.NUM_PREDICT},
+        }
+        if C.THINK is not None:
+            body["think"] = C.THINK
+        payload = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(url, data=payload,
                                      headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=C.REQUEST_TIMEOUT) as r:
